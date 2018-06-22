@@ -6,35 +6,61 @@
 
 
 import tensorflow as tf
-
+from sklearn.utils import shuffle
+import numpy as np
+import util
 
 class BaseModel(object):
-    def __init__(self, opt, model_path='model/'):
+    def __init__(self, opt):
         self.opt = opt
-        self._X = tf.placeholder(tf.float32,
-                                 shape=[None, ],
-                                 name='input_x')
-        self._y = tf.placeholder(tf.float32,
-                                 shape=[None, ],
-                                 name='input_y')
-        self._dropout_keep_prob = tf.placeholder(dtype=tf.float32,
-                                                 shape=[],
-                                                 name='dropout_keep_prob')
+
+        # load word embedding matrix
+        emb_mat = np.load(self.opt["embedding_matrix_dir"])
+        with tf.variable_scope("inputs"):
+            self._X = tf.placeholder(tf.float32,
+                                     shape=[None, ],
+                                     name='input_x')
+            self._y = tf.placeholder(tf.float32,
+                                     shape=[None, ],
+                                     name='input_y')
+            self._dropout_keep_prob = tf.placeholder(dtype=tf.float32,
+                                                     shape=[],
+                                                     name='dropout_keep_prob')
+
+        with tf.variable_scope("embedding"):
+            self.emb_mat = tf.Variable(emb_mat, trainable=False, dtype=tf.float32)
+            self.sent = tf.nn.embedding_lookup(params=self.emb_mat, ids=self._X)
+
+        self.saver = None
+        self.sess = None
+        self.writer = None
+        self.output = None
+
         self._build_model()
         self.merged = tf.summary.merge_all()
         self.init_op = tf.global_variables_initializer()
-        self.sess = tf.Session()
-        self.saver = tf.train.Saver()
-        self.writer = tf.summary.FileWriter(model_path)
 
     def _build_model(self):
         pass
 
-    def predict(self, ticket):
-        return self.sess.run(self.output, feed_dict={self._X: ticket,
+    def start(self, version=0, is_warm=True):
+        self.saver = tf.train.Saver()
+        self.sess = tf.Session()
+
+        if is_warm:
+            self.saver.restore(self.sess, self.opt["model_dir"] + str(version))
+        else:
+            self.sess.run(self.init_op)
+            self.writer = tf.summary.FileWriter(self.opt["tfboard_dir"])
+
+    def predict(self, words_emb):
+        return self.sess.run(self.output, feed_dict={self._X: words_emb,
                                                      self._dropout_keep_prob: 1.0})
 
-    def fit(self):
+    def fit(self, batch_X, batch_y):
+        pass
+
+    def partial_fit(self, batch_X, batch_y):
         pass
 
     def save_model(self, curr_version):
@@ -47,8 +73,8 @@ class BaseModel(object):
 
 
 class RNNClassifier(BaseModel):
-    def __init__(self, model_path='model/'):
-        super().__init__(model_path)
+    def __init__(self, opt):
+        super().__init__(opt)
 
     def _build_model(self):
         w_initializer = tf.random_normal_initializer(mean=0.0, stddev=0.01)
@@ -64,7 +90,7 @@ class RNNClassifier(BaseModel):
 
             _, h_state = tf.nn.bidirectional_dynamic_rnn(cell_fw=gru_cell_fw,
                                                          cell_bw=gru_cell_bw,
-                                                         inputs=self._X,
+                                                         inputs=self.sent,
                                                          dtype=tf.float32)
 
         with tf.variable_scope('fully_connected_block'):
@@ -85,11 +111,40 @@ class RNNClassifier(BaseModel):
                                                       activation=tf.nn.relu)
 
         with tf.name_scope('output'):
-            self.output = tf.arg_max(fully_connected_layer_3, 1)
+            output_layer = tf.layers.dense(fully_connected_layer_3,
+                                           self.opt["label_dim"],
+                                           kernel_initializer=w_initializer,
+                                           bias_initializer=b_initializer,
+                                           activation=tf.nn.relu)
+            self.output = tf.arg_max(output_layer, 1)
 
         with tf.name_scope('loss'):
             self.loss = \
-                tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self._y, logits=fully_connected_layer_3))
+                tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self._y, logits=output_layer))
 
         with tf.name_scope('adam_optimizer'):
             self.train_step = tf.train.AdamOptimizer(1e-4).minimize(self.loss)
+
+    def fit(self, X, y, batch_size=128, epochs=100, drop_out_rate=0.6):
+        for e in range(epochs):
+            # shuffle training data set
+            train_X, labels = shuffle(X, y, random_state=0)
+
+            i = 0
+            while i < train_X.shape[0]:
+                start = i
+                end = i + batch_size
+                batch_X = train_X[start:end, :]
+                batch_y = labels[start:end, :]
+                i = end
+
+                _, loss = self.sess.run([self.train_step, self.loss], feed_dict={self._X: batch_X,
+                                                                                 self._y: batch_y,
+                                                                                 self._dropout_keep_prob: drop_out_rate
+                                                                                 })
+                print("epoch: {}/{}, loss: {}".format(e, epochs, loss))
+
+    def partial_fit(self, batch_X, batch_y):
+        _, loss = self.sess.run([self.train_step, self.loss], feed_dict={self._X: batch_X,
+                                                                         self._y: batch_y
+                                                                         })
