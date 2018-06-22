@@ -8,38 +8,50 @@
 import tensorflow as tf
 from sklearn.utils import shuffle
 import numpy as np
+import pickle
+from nltk import word_tokenize
 import util
+from abc import abstractmethod
+
 
 class BaseModel(object):
     def __init__(self, opt):
         self.opt = opt
 
+        # load vocabulary list
+        with open("/mnt/new_vocabulary.pickle", "rb") as input_file:
+            self.voc = pickle.load(input_file)
         # load word embedding matrix
         emb_mat = np.load(self.opt["embedding_matrix_dir"])
+
         with tf.variable_scope("inputs"):
-            self._X = tf.placeholder(tf.float32,
-                                     shape=[None, ],
-                                     name='input_x')
-            self._y = tf.placeholder(tf.float32,
-                                     shape=[None, ],
-                                     name='input_y')
+            # shape [batch_size, length of words]
+            self._text_input = tf.placeholder(tf.float32,
+                                              shape=[None, None],
+                                              name='input_x')
+            self._label = tf.placeholder(tf.float32,
+                                         shape=[None, 1],
+                                         name='input_y')
             self._dropout_keep_prob = tf.placeholder(dtype=tf.float32,
                                                      shape=[],
                                                      name='dropout_keep_prob')
 
         with tf.variable_scope("embedding"):
             self.emb_mat = tf.Variable(emb_mat, trainable=False, dtype=tf.float32)
-            self.sent = tf.nn.embedding_lookup(params=self.emb_mat, ids=self._X)
+            self.sent = tf.nn.embedding_lookup(params=self.emb_mat, ids=self._text_input)
 
         self.saver = None
         self.sess = None
         self.writer = None
         self.output = None
+        self.train_step = None
+        self.loss = None
 
         self._build_model()
         self.merged = tf.summary.merge_all()
         self.init_op = tf.global_variables_initializer()
 
+    @abstractmethod
     def _build_model(self):
         pass
 
@@ -47,21 +59,44 @@ class BaseModel(object):
         self.saver = tf.train.Saver()
         self.sess = tf.Session()
 
-        if is_warm:
-            self.saver.restore(self.sess, self.opt["model_dir"] + str(version))
-        else:
+        if not is_warm or version < 0:
             self.sess.run(self.init_op)
             self.writer = tf.summary.FileWriter(self.opt["tfboard_dir"])
+        else:
+            self.saver.restore(self.sess, self.opt["model_dir"] + str(version))
 
-    def predict(self, words_emb):
-        return self.sess.run(self.output, feed_dict={self._X: words_emb,
+    def predict(self, text):
+        words = word_tokenize(text)
+        words_emb = list(map(lambda x: util.convert_word_to_embedding_index(x, self.voc), words))
+        return self.sess.run(self.output, feed_dict={self._text_input: words_emb,
                                                      self._dropout_keep_prob: 1.0})
 
-    def fit(self, batch_X, batch_y):
-        pass
+    def fit(self, X, y, batch_size=128, epochs=100, drop_out_rate=0.6):
+        for e in range(epochs):
+            # shuffle training data set
+            train_X, labels = shuffle(X, y, random_state=0)
 
-    def partial_fit(self, batch_X, batch_y):
-        pass
+            # TODO: translate words to indexes
+
+            i = 0
+            while i < train_X.shape[0]:
+                start = i
+                end = i + batch_size
+                batch_X = train_X[start:end, :]
+                batch_y = labels[start:end, :]
+                i = end
+
+                _, loss = self.sess.run([self.train_step, self.loss], feed_dict={self._text_input: batch_X,
+                                                                                 self._label: batch_y,
+                                                                                 self._dropout_keep_prob: drop_out_rate
+                                                                                 })
+                print("epoch: {}/{}, loss: {}".format(e, epochs, loss))
+
+    def partial_fit(self, batch_X, batch_y, drop_out_rate=0.6):
+        _, loss = self.sess.run([self.train_step, self.loss], feed_dict={self._text_input: batch_X,
+                                                                         self._label: batch_y,
+                                                                         self._dropout_keep_prob: drop_out_rate
+                                                                         })
 
     def save_model(self, curr_version):
         """
@@ -120,31 +155,7 @@ class RNNClassifier(BaseModel):
 
         with tf.name_scope('loss'):
             self.loss = \
-                tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self._y, logits=output_layer))
+                tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self._label, logits=output_layer))
 
         with tf.name_scope('adam_optimizer'):
             self.train_step = tf.train.AdamOptimizer(1e-4).minimize(self.loss)
-
-    def fit(self, X, y, batch_size=128, epochs=100, drop_out_rate=0.6):
-        for e in range(epochs):
-            # shuffle training data set
-            train_X, labels = shuffle(X, y, random_state=0)
-
-            i = 0
-            while i < train_X.shape[0]:
-                start = i
-                end = i + batch_size
-                batch_X = train_X[start:end, :]
-                batch_y = labels[start:end, :]
-                i = end
-
-                _, loss = self.sess.run([self.train_step, self.loss], feed_dict={self._X: batch_X,
-                                                                                 self._y: batch_y,
-                                                                                 self._dropout_keep_prob: drop_out_rate
-                                                                                 })
-                print("epoch: {}/{}, loss: {}".format(e, epochs, loss))
-
-    def partial_fit(self, batch_X, batch_y):
-        _, loss = self.sess.run([self.train_step, self.loss], feed_dict={self._X: batch_X,
-                                                                         self._y: batch_y
-                                                                         })

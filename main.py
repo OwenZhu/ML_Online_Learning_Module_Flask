@@ -8,18 +8,17 @@ from flask import Flask
 from flask import request, jsonify
 import models
 import config
-import pickle
-from nltk import word_tokenize
-import util
+import pandas as pd
+from sklearn.model_selection import train_test_split
 
 app = Flask(__name__)
 app.config.from_object(config)
 
-with open("/mnt/new_vocabulary.pickle", "rb") as input_file:
-    vocabulary = pickle.load(input_file)
+training_data_path = "data/deepdive.csv"
 
 global_step = 0
 clf = None
+curr_version = 0
 
 
 @app.route("/")
@@ -29,9 +28,19 @@ def index():
 
 @app.route('/train', methods=['GET'])
 def train():
-    # TODO: what to do when client waiting the training result
-    list(map(lambda x: util.convert_word_to_embedding_index(x, vocabulary), ))
-    pass
+    if request.method == 'GET':
+        train_data = pd.read_csv(training_data_path, encoding="ISO-8859-1")
+        train_X = train_data['problem_abstract']
+        train_y = train_data['Application_Status']
+        train_X, val_X, train_y, val_y = train_test_split(train_X, train_y, test_size=0.1, random_state=0)
+        clf.fit(train_X, train_y)
+
+        global curr_version
+        clf.save_model(curr_version)
+        curr_version += 1
+
+        # TODO: what to do when client waits the training result?
+        pass
 
 
 @app.route('/predict', methods=['POST'])
@@ -42,9 +51,8 @@ def predict():
 
         formed_data = {"problem_abstract": "This is a test"}
         # json_ = request.json
-        words = word_tokenize(formed_data["problem_abstract"])
-        words_emb = list(map(lambda x: util.convert_word_to_embedding_index(x, vocabulary), words))
-        prediction = clf.predict(words_emb)
+
+        prediction = clf.predict(formed_data["problem_abstract"])
         return jsonify({"prediction": prediction})
 
 
@@ -52,7 +60,9 @@ def predict():
 def rollback():
     global clf
     clf = models.RNNClassifier(app.config["MODEL_OPT"])
-    pass
+    global curr_version
+    curr_version -= 3
+    clf.start(curr_version, is_warm=True)
 
 
 if __name__ == '__main__':
