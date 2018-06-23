@@ -48,27 +48,38 @@ class BaseModel(object):
         self.output = None
         self.train_step = None
         self.loss = None
-        
+
         self.global_step = 0
-        
+
         self._build_model()
         self.merged = tf.summary.merge_all()
         self.init_op = tf.global_variables_initializer()
-        
+
     @abstractmethod
     def _build_model(self):
         pass
 
-    def start(self, version=0, is_warm=False):
-        self.curr_ver = version
+    def start(self, version=0, is_warm_start=False):
         self.saver = tf.train.Saver()
         self.sess = tf.Session()
+        dir_path = self.opt["model_dir"] + str(type(self).__name__) + '_' + str(version) + '/'
 
-        if not is_warm or version < 0:
-            self.sess.run(self.init_op)
-            self.writer = tf.summary.FileWriter(self.opt["tfboard_dir"])
+        if is_warm_start:
+            self.saver.restore(self.sess, dir_path + str(type(self).__name__))
         else:
-            self.saver.restore(self.sess, self.opt["model_dir"] + str(version))
+            self.sess.run(self.init_op)
+
+        self.writer = tf.summary.FileWriter(self.opt["tfboard_dir"] + str(type(self).__name__) + str(version) + '/')
+
+    def save_model(self, curr_version=0):
+        """
+        Save Tensorflow model
+        """
+        dir_path = self.opt["model_dir"] + str(type(self).__name__) + '_' + str(curr_version) + '/'
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+        save_path = self.saver.save(self.sess, dir_path + str(type(self).__name__))
+        print("Model saved in path: %s" % save_path)
 
     def predict(self, text_list):
         emd_word_list = []
@@ -76,7 +87,7 @@ class BaseModel(object):
             words = word_tokenize(text)
             emd_word_list.append(
                 list(map(lambda x: util.convert_word_to_embedding_index(x, self.voc), words)))
-        
+
         # padding to a matrix by '0'
         max_w = util.find_max_length(emd_word_list)
         for ws in emd_word_list:
@@ -84,7 +95,7 @@ class BaseModel(object):
 
         emd_text_batch = np.asarray(emd_word_list)
         pred_list = list(self.sess.run(self.output, feed_dict={self._text_input: emd_text_batch,
-                                                     self._dropout_keep_prob: 1.0}))
+                                                               self._dropout_keep_prob: 1.0}))
         return pred_list
 
     def fit(self, X, y, batch_size=128, epochs=5, drop_out_rate=0.6):
@@ -101,29 +112,30 @@ class BaseModel(object):
                 batch_X = train_X[start:end]
                 batch_y = labels[start:end]
                 i = end
-                
+
                 emd_word_list = []
                 for index, text in enumerate(batch_X):
                     words = word_tokenize(text)
                     emd_word_list.append(
                         list(map(lambda x: util.convert_word_to_embedding_index(x, self.voc), words)))
-                    
+
                 # padding to a matrix by '0'
                 max_w = util.find_max_length(emd_word_list)
                 for ws in emd_word_list:
                     ws.extend([0] * (max_w - len(ws)))
-                    
+
                 emd_text_batch = np.asarray(emd_word_list)
-                    
-                _, loss, summaries = self.sess.run([self.train_step, self.loss, self.merged], feed_dict={self._text_input: emd_text_batch,
-                                                                                 self._label: batch_y,
-                                                                                 self._dropout_keep_prob: drop_out_rate
-                                                                                 })
+
+                _, loss, summaries = self.sess.run([self.train_step, self.loss, self.merged],
+                                                   feed_dict={self._text_input: emd_text_batch,
+                                                              self._label: batch_y,
+                                                              self._dropout_keep_prob: drop_out_rate
+                                                              })
                 self.writer.add_summary(summaries, self.global_step)
                 self.global_step += 1
 
     def partial_fit(self, batch_X, batch_y, drop_out_rate=0.6):
-        
+
         emd_word_list = []
         for index, text in enumerate(batch_X):
             words = word_tokenize(text)
@@ -136,23 +148,14 @@ class BaseModel(object):
             ws.extend([0] * (max_w - len(ws)))
 
         emd_text_batch = np.asarray(emd_word_list)
-            
-        _, loss, summaries = self.sess.run([self.train_step, self.loss, self.merged], feed_dict={self._text_input: emd_text_batch,
-                                                                         self._label: batch_y,
-                                                                         self._dropout_keep_prob: drop_out_rate
-                                                                         })
+
+        _, loss, summaries = self.sess.run([self.train_step, self.loss, self.merged],
+                                           feed_dict={self._text_input: emd_text_batch,
+                                                      self._label: batch_y,
+                                                      self._dropout_keep_prob: drop_out_rate
+                                                      })
         self.writer.add_summary(summaries, self.global_step)
         self.global_step += 1
-
-    def save_model(self, curr_version=0):
-        """
-        Save Tensorflow model
-        """
-        dir_path = self.opt["model_dir"] + str(type(self).__name__) + '_' + str(curr_version) + '/'
-        if not os.path.exists(dir_path):
-            os.makedirs(dir_path)
-        save_path = self.saver.save(self.sess, dir_path + str(type(self).__name__))
-        print("Model saved in path: %s" % save_path)
 
 
 class RNNClassifier(BaseModel):
@@ -180,7 +183,7 @@ class RNNClassifier(BaseModel):
                                                          inputs=self.emb_sent,
                                                          dtype=tf.float32)
             rnn_output = tf.concat([h_state[0][-1], h_state[1][-1]], axis=1)
-            
+
         with tf.variable_scope('fully_connected_block'):
             fully_connected_layer_1 = tf.layers.dense(rnn_output,
                                                       self.opt["fully_connected_layer_1_node_num"],
@@ -188,7 +191,7 @@ class RNNClassifier(BaseModel):
                                                       bias_initializer=b_initializer,
                                                       activation=tf.nn.relu)
             fully_connected_layer_1 = tf.nn.dropout(fully_connected_layer_1, self._dropout_keep_prob)
-            
+
             fully_connected_layer_2 = tf.layers.dense(fully_connected_layer_1,
                                                       self.opt["fully_connected_layer_2_node_num"],
                                                       kernel_initializer=w_initializer,
@@ -216,6 +219,6 @@ class RNNClassifier(BaseModel):
             self.loss = \
                 tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self._label, logits=output_layer))
             tf.summary.scalar("training_loss", self.loss)
-            
+
         with tf.name_scope('adam_optimizer'):
             self.train_step = tf.train.AdamOptimizer(1e-4).minimize(self.loss)
