@@ -16,7 +16,7 @@ import os
 app = Flask(__name__)
 app.config.from_object(config)
 
-training_data_path = "data/deepdive.csv"
+training_data_path = "data/training_data.csv"
 
 global_step = 0
 clf = None
@@ -31,14 +31,12 @@ def index():
 @app.route('/train', methods=['GET'])
 def train():
     if request.method == 'GET':
-
         # load training set
-        train_data = pd.read_csv(training_data_path, encoding="ISO-8859-1")
+        train_data = pd.read_csv(training_data_path, index_col='id', encoding="ISO-8859-1")
         train_X = train_data['problem_abstract']
         train_y = train_data['Application_Status']
         train_X, val_X, train_y, val_y = train_test_split(train_X, train_y, test_size=0.1, random_state=0)
         clf.fit(train_X, train_y)
-
 
         # save model after training
         global curr_version
