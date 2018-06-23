@@ -6,12 +6,13 @@
 
 from flask import Flask
 from flask import request, jsonify
-import models
-import config
 import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
 import shutil
 import os
+import models
+import config
 
 app = Flask(__name__)
 app.config.from_object(config)
@@ -19,7 +20,8 @@ app.config.from_object(config)
 training_data_path = "data/training_data.csv"
 
 clf = None
-curr_version = 0
+curr_version = None
+training_buffer = None
 
 
 @app.route("/")
@@ -47,7 +49,7 @@ def train():
 
         # TODO: what to do when client waits the training result?
         pass
-
+    
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -58,24 +60,35 @@ def predict():
         formed_data = {"problem_abstract": "This is a test"}
         # json_ = request.json
 
-        prediction = clf.predict(formed_data["problem_abstract"])
-        return jsonify({"prediction": prediction})
+        text_list = [formed_data["problem_abstract"]]
+        prediction = clf.predict(text_list)
+        return jsonify({"pred_list": prediction})
 
 
 @app.route('/rollback', methods=['POST'])
 def rollback():
     global clf
-    clf = models.RNNClassifier(app.config["MODEL_OPT"])
+    clf = models.RNNClassifier(app.config["MODEL_OPTION"])
+    
     global curr_version
+    if curr_version < 3:
+        return jsonify({"status": False, "response": "Cannot rollback"})
+    
     curr_version -= 3
     clf.start(curr_version, is_warm=True)
+    info = "Rollback to version " + str(curr_version) + "successfully"
+    return jsonify({"status": True, "response": info})
 
 
 @app.route('/wipe', methods=['GET'])
 def wipe():
     try:
-        shutil.rmtree(app.config["model_dir"])
-        os.makedirs(app.config["model_dir"])
+        shutil.rmtree(app.config["MODEL_OPTION"]["model_dir"])
+        os.makedirs(app.config["MODEL_OPTION"]["model_dir"])
+        
+        global curr_version
+        curr_version = 0
+        
         return jsonify({'status': True, 'response': 'Wipe successfully'})
 
     except Exception as e:
@@ -84,5 +97,10 @@ def wipe():
 
 
 if __name__ == '__main__':
+    curr_version = 0
     clf = models.RNNClassifier(app.config["MODEL_OPTION"])
+    
+    # TODO: create a partial training buffer
+    columns = ['Active', 'Planned', 'Retired']
+    training_buffer = pd.DataFrame(columns=columns)
     app.run()

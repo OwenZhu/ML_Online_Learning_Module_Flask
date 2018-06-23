@@ -6,6 +6,7 @@
 
 
 MODEL_OPTION = {
+    "batch_size": 64,
     "model_dir": "model/",
     "tfboard_dir": "graph/",
     "embedding_matrix_dir": "/mnt/word_embedding_matrix.npy",

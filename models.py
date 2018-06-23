@@ -83,8 +83,9 @@ class BaseModel(object):
             ws.extend([0] * (max_w - len(ws)))
 
         emd_text_batch = np.asarray(emd_word_list)
-        return self.sess.run(self.output, feed_dict={self._text_input: emd_text_batch,
-                                                     self._dropout_keep_prob: 1.0})
+        pred_list = list(self.sess.run(self.output, feed_dict={self._text_input: emd_text_batch,
+                                                     self._dropout_keep_prob: 1.0}))
+        return pred_list
 
     def fit(self, X, y, batch_size=128, epochs=5, drop_out_rate=0.6):
         for e in range(epochs):
@@ -122,24 +123,32 @@ class BaseModel(object):
                 self.global_step += 1
 
     def partial_fit(self, batch_X, batch_y, drop_out_rate=0.6):
-        embedding_text_batch = np.zeros((batch_X.shape[0], self.opt["emd_dim"]))
+        
+        emd_word_list = []
         for index, text in enumerate(batch_X):
             words = word_tokenize(text)
-            embedding_text_batch[index, :] = (
+            emd_word_list.append(
                 list(map(lambda x: util.convert_word_to_embedding_index(x, self.voc), words)))
 
-        _, loss = self.sess.run([self.train_step, self.loss, self.merged], feed_dict={self._text_input: batch_X,
+        # padding to a matrix by '0'
+        max_w = util.find_max_length(emd_word_list)
+        for ws in emd_word_list:
+            ws.extend([0] * (max_w - len(ws)))
+
+        emd_text_batch = np.asarray(emd_word_list)
+            
+        _, loss, summaries = self.sess.run([self.train_step, self.loss, self.merged], feed_dict={self._text_input: emd_text_batch,
                                                                          self._label: batch_y,
                                                                          self._dropout_keep_prob: drop_out_rate
                                                                          })
         self.writer.add_summary(summaries, self.global_step)
         self.global_step += 1
 
-    def save_model(self, curr_version="0"):
+    def save_model(self, curr_version=0):
         """
         Save Tensorflow model
         """
-        dir_path = self.opt["model_dir"] + str(type(self).__name__) + '_' + curr_version + '/'
+        dir_path = self.opt["model_dir"] + str(type(self).__name__) + '_' + str(curr_version) + '/'
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
         save_path = self.saver.save(self.sess, dir_path + str(type(self).__name__))
@@ -170,7 +179,7 @@ class RNNClassifier(BaseModel):
                                                          cell_bw=gru_cell_bw,
                                                          inputs=self.emb_sent,
                                                          dtype=tf.float32)
-            rnn_output = tf.concat([h_state[0][0], h_state[1][0]], axis=1)
+            rnn_output = tf.concat([h_state[0][-1], h_state[1][-1]], axis=1)
             
         with tf.variable_scope('fully_connected_block'):
             fully_connected_layer_1 = tf.layers.dense(rnn_output,
