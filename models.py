@@ -12,6 +12,7 @@ import pickle
 from nltk import word_tokenize
 import util
 from abc import abstractmethod
+from layers import Layers
 
 
 class BaseModel(object):
@@ -73,10 +74,10 @@ class BaseModel(object):
 
     def fit(self, X, y, batch_size=128, epochs=100, drop_out_rate=0.6):
         for e in range(epochs):
-            # shuffle training data set
+            # shuffle training set
             train_X, labels = shuffle(X, y, random_state=0)
 
-            # TODO: translate words to indexes
+            # TODO: translate words to embedding indexes
 
             i = 0
             while i < train_X.shape[0]:
@@ -93,6 +94,12 @@ class BaseModel(object):
                 print("epoch: {}/{}, loss: {}".format(e, epochs, loss))
 
     def partial_fit(self, batch_X, batch_y, drop_out_rate=0.6):
+        embedding_text_batch = np.zeros((batch_X.shape[0], self.opt["emd_dim"]))
+        for index, text in enumerate(batch_X):
+            words = word_tokenize(text)
+            embedding_text_batch[index, :] = (
+                list(map(lambda x: util.convert_word_to_embedding_index(x, self.voc), words)))
+
         _, loss = self.sess.run([self.train_step, self.loss], feed_dict={self._text_input: batch_X,
                                                                          self._label: batch_y,
                                                                          self._dropout_keep_prob: drop_out_rate
@@ -117,10 +124,14 @@ class RNNClassifier(BaseModel):
 
         with tf.variable_scope('rnn_block'):
             gru_cell_fw = tf.nn.rnn_cell.MultiRNNCell(
-                [tf.contrib.rnn.GRUCell(num_units=self.opt["rnn_node_num"], activation=tf.nn.relu)
+                [Layers.dropout_wrapped_gru_cell(self._dropout_keep_prob,
+                                                 num_units=self.opt["rnn_node_num"],
+                                                 activation=tf.nn.relu)
                  for _ in range(self.opt["rnn_layer_num"])])
             gru_cell_bw = tf.nn.rnn_cell.MultiRNNCell(
-                [tf.contrib.rnn.GRUCell(num_units=self.opt["rnn_node_num"], activation=tf.nn.relu)
+                [Layers.dropout_wrapped_gru_cell(self._dropout_keep_prob,
+                                                 num_units=self.opt["rnn_node_num"],
+                                                 activation=tf.nn.relu)
                  for _ in range(self.opt["rnn_layer_num"])])
 
             _, h_state = tf.nn.bidirectional_dynamic_rnn(cell_fw=gru_cell_fw,
@@ -134,16 +145,27 @@ class RNNClassifier(BaseModel):
                                                       kernel_initializer=w_initializer,
                                                       bias_initializer=b_initializer,
                                                       activation=tf.nn.relu)
+
+            fully_connected_layer_1 = tf.contrib.rnn.DropoutWrapper(fully_connected_layer_1,
+                                                                    input_keep_prob=self._dropout_keep_prob)
+
             fully_connected_layer_2 = tf.layers.dense(fully_connected_layer_1,
                                                       self.opt["fully_connected_layer_2_node_num"],
                                                       kernel_initializer=w_initializer,
                                                       bias_initializer=b_initializer,
                                                       activation=tf.nn.relu)
+
+            fully_connected_layer_2 = tf.contrib.rnn.DropoutWrapper(fully_connected_layer_2,
+                                                                    input_keep_prob=self._dropout_keep_prob)
+
             fully_connected_layer_3 = tf.layers.dense(fully_connected_layer_2,
                                                       self.opt["fully_connected_layer_3_node_num"],
                                                       kernel_initializer=w_initializer,
                                                       bias_initializer=b_initializer,
                                                       activation=tf.nn.relu)
+
+            fully_connected_layer_3 = tf.contrib.rnn.DropoutWrapper(fully_connected_layer_3,
+                                                                    input_keep_prob=self._dropout_keep_prob)
 
         with tf.name_scope('output'):
             output_layer = tf.layers.dense(fully_connected_layer_3,

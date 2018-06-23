@@ -5,7 +5,7 @@
 # @File    : config.py
 
 
-MODEL_OPT = {
+MODEL_OPTION = {
     "model_dir": "model/",
     "tfboard_dir": "graph/",
     "embedding_matrix_dir": "/mnt/new_word_embedding_matrix.npy",
@@ -14,5 +14,6 @@ MODEL_OPT = {
     "fully_connected_layer_1_node_num": 64,
     "fully_connected_layer_2_node_num": 64,
     "fully_connected_layer_3_node_num": 64,
-    "label_dim": 3
+    "label_dim": 3,
+    "emd_dim": 50
 }
