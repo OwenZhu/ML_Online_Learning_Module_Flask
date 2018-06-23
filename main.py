@@ -18,7 +18,6 @@ app.config.from_object(config)
 
 training_data_path = "data/training_data.csv"
 
-global_step = 0
 clf = None
 curr_version = 0
 
@@ -32,15 +31,18 @@ def index():
 def train():
     if request.method == 'GET':
         # load training set
-        train_data = pd.read_csv(training_data_path, index_col='id', encoding="ISO-8859-1")
+        train_data = pd.read_csv('data/training_data.csv', index_col='id', encoding="ISO-8859-1")
         train_X = train_data['problem_abstract']
-        train_y = train_data['Application_Status']
+        train_y = train_data[['Active', 'Planned', 'Retired']]
         train_X, val_X, train_y, val_y = train_test_split(train_X, train_y, test_size=0.1, random_state=0)
+        
         clf.fit(train_X, train_y)
+        
+        # TODO: validate the classifier, decide if save current version
 
         # save model after training
         global curr_version
-        clf.save_model(curr_version)
+        clf.save_model(str(curr_version))
         curr_version += 1
 
         # TODO: what to do when client waits the training result?

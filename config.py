@@ -8,7 +8,8 @@
 MODEL_OPTION = {
     "model_dir": "model/",
     "tfboard_dir": "graph/",
-    "embedding_matrix_dir": "/mnt/new_word_embedding_matrix.npy",
+    "embedding_matrix_dir": "/mnt/word_embedding_matrix.npy",
+    "vocaburary_list_dir": "/mnt/vocabulary.pickle",
     "rnn_node_num": 64,
     "rnn_layer_num": 2,
     "fully_connected_layer_1_node_num": 64,

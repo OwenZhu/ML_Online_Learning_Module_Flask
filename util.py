@@ -13,3 +13,7 @@ def convert_word_to_embedding_index(word, voc):
         return voc[word]
     else:
         return random.randint(0, len(voc) - 1)
+    
+def find_max_length(lst):
+    length = max((len(e) for e in lst))
+    return length
