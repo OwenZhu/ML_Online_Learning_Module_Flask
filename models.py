@@ -8,7 +8,7 @@
 import os
 import tensorflow as tf
 from sklearn.utils import shuffle
-from sklearn.metrics import accuracy_score¶
+from sklearn.metrics import accuracy_score
 import numpy as np
 import pickle
 from nltk import word_tokenize
@@ -142,7 +142,7 @@ class BaseModel(object):
 
     def score(self, X, y_true):
         y_pred = self.predict(X)
-        score = accuracy_score(y_true, y_pred)
+        score = accuracy_score(list(np.argmax(y_true.values, axis=1)), y_pred)
         return score
                 
     def partial_fit(self, batch_X, batch_y, drop_out_rate=0.6):

@@ -18,6 +18,7 @@ app = Flask(__name__)
 app.config.from_object(config)
 
 training_data_path = "data/training_data.csv"
+history_scores_path = 'data/history_scores.csv'
 
 clf = None
 curr_version = None
@@ -33,7 +34,7 @@ def index():
 def train():
     if request.method == 'GET':
         # load training set
-        train_data = pd.read_csv('data/training_data.csv', index_col='id', encoding="ISO-8859-1")
+        train_data = pd.read_csv(training_data_path, index_col='id', encoding="ISO-8859-1")
         train_X = train_data['problem_abstract']
         train_y = train_data[['Active', 'Planned', 'Retired']]
         train_X, val_X, train_y, val_y = train_test_split(train_X, train_y, test_size=0.1, random_state=0)
@@ -41,14 +42,19 @@ def train():
         global clf
         clf.fit(train_X, train_y)
 
-        # TODO: validate the classifier, decide if save current version
-        clf.predict(val_X, val_y)
-        
         # save model after training
         global curr_version
         curr_version += 1
         clf.save_model(str(curr_version))
-
+        
+        # validate the classifier
+        clf.predict(val_X, val_y)
+        score = clf.score(val_X, val_y)
+        print("Accuracy is:", score)
+        
+        with open(history_scores_path, "a") as f:
+            f.write(str(curr_version) + ',' + str(score) + '\n')
+        
         # TODO: what to do when client waits the training result?
         return jsonify({"status": True, "response": "Finished training"})
 
@@ -76,9 +82,6 @@ def predict():
     if request.method == 'POST':
         if curr_version == -1:
             return jsonify({'status': False, 'response': 'Train a model first'})
-
-        # formed_data = {"problem_abstract": "This is a test"}
-        # text_list = [formed_data["problem_abstract"]]
         
         json_ = request.get_json()
         text_list = [t["problem_abstract"] for t in json_]
@@ -109,6 +112,13 @@ def rollback():
             return jsonify({"status": False, "response": "Previous version not found, rollback to initial version"})
 
         return jsonify({"status": True, "response": "Rollback to version " + str(curr_version) + "successfully"})
+
+    
+@app.route('/get_history', methods=['GET'])
+def get_history():
+    scores = pd.read_csv(history_scores_path)
+    ht = scores.to_json()
+    return jsonify({"status": True, "response": ht})
 
 
 @app.route('/wipe', methods=['GET'])
