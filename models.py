@@ -8,6 +8,7 @@
 import os
 import tensorflow as tf
 from sklearn.utils import shuffle
+from sklearn.metrics import accuracy_score¶
 import numpy as np
 import pickle
 from nltk import word_tokenize
@@ -104,12 +105,12 @@ class BaseModel(object):
         return pred_list
 
     def fit(self, X, y, batch_size=128, epochs=5, drop_out_rate=0.6):
+        self.global_step = 0
+        
         for e in range(epochs):
             # shuffle training set
             train_X, labels = shuffle(X, y, random_state=0)
-
-            # TODO: translate words to embedding indexes
-
+            
             i = 0
             while i < train_X.shape[0]:
                 start = i
@@ -139,8 +140,14 @@ class BaseModel(object):
                 self.writer.add_summary(summaries, self.global_step)
                 self.global_step += 1
 
+    def score(self, X, y_true):
+        y_pred = self.predict(X)
+        score = accuracy_score(y_true, y_pred)
+        return score
+                
     def partial_fit(self, batch_X, batch_y, drop_out_rate=0.6):
-
+        self.global_step = 0
+        
         emd_word_list = []
         for index, text in enumerate(batch_X):
             words = word_tokenize(text)

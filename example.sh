@@ -1,8 +1,8 @@
-#!/bin/bash
+#!/bin/sh
 
 # Starting API
 python main.py &
-sleep 2
+sleep 3
 
 # GET method train
 curl -X GET http://localhost:5000/train && \

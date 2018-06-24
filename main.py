@@ -38,14 +38,16 @@ def train():
         train_y = train_data[['Active', 'Planned', 'Retired']]
         train_X, val_X, train_y, val_y = train_test_split(train_X, train_y, test_size=0.1, random_state=0)
 
+        global clf
         clf.fit(train_X, train_y)
 
         # TODO: validate the classifier, decide if save current version
-
+        clf.predict(val_X, val_y)
+        
         # save model after training
         global curr_version
-        clf.save_model(str(curr_version))
         curr_version += 1
+        clf.save_model(str(curr_version))
 
         # TODO: what to do when client waits the training result?
         return jsonify({"status": True, "response": "Finished training"})
@@ -54,58 +56,73 @@ def train():
 @app.route('/partial_train', methods=['POST'])
 def partial_train():
     if request.method == 'POST':
-        if clf is None:
+        global curr_version
+        if curr_version == -1:
             return jsonify({'status': False, 'response': 'Train a model first'})
 
-        json_ = request.json
+        json_ = request.get_json()
         text_list = [t["problem_abstract"] for t in json_]
         label_list = [t["Application_Status"] for t in json_]
         clf.partial_fit(text_list, label_list)
+        curr_version += 1
+        
+        clf.save_model(str(curr_version))
+        
         return jsonify({"status": True, "response": "Finished partial training"})
 
 
 @app.route('/predict', methods=['POST'])
 def predict():
     if request.method == 'POST':
-        if clf is None:
+        if curr_version == -1:
             return jsonify({'status': False, 'response': 'Train a model first'})
 
         # formed_data = {"problem_abstract": "This is a test"}
         # text_list = [formed_data["problem_abstract"]]
         
-        json_ = request.json
+        json_ = request.get_json()
         text_list = [t["problem_abstract"] for t in json_]
         prediction = clf.predict(text_list)
-        return jsonify({"status": True, "pred_list": prediction})
+        
+        labels = ["Active", "Planned", "Retired"]
+        pred_str = [labels[p] for p in prediction]
+        
+        return jsonify({"status": True, "pred_list": pred_str})
 
 
-@app.route('/rollback', methods=['POST'])
+@app.route('/rollback', methods=['GET'])
 def rollback():
-    global curr_version
-    if curr_version < 3:
-        return jsonify({"status": False, "response": "Cannot rollback"})
+    if request.method == 'GET':
+        global curr_version
+        if curr_version < 3:
+            return jsonify({"status": False, "response": "Cannot rollback"})
 
-    global clf
-    clf = models.RNNClassifier(app.config["MODEL_OPTION"])
-    curr_version -= 3
-    try:
-        clf.start(curr_version, is_warm_start=True)
-    except Exception as e:
-        print(e)
-        clf.start()
-        return jsonify({"status": False, "response": "Last version not found, rollback to initial version"})
+        global clf
+        clf = models.RNNClassifier(app.config["MODEL_OPTION"])
+        curr_version -= 3
+        try:
+            clf.start(curr_version, is_warm_start=True)
+        except Exception as e:
+            print(e)
+            curr_version = -1
+            clf.start()
+            return jsonify({"status": False, "response": "Previous version not found, rollback to initial version"})
 
-    return jsonify({"status": True, "response": "Rollback to version " + str(curr_version) + "successfully"})
+        return jsonify({"status": True, "response": "Rollback to version " + str(curr_version) + "successfully"})
 
 
 @app.route('/wipe', methods=['GET'])
 def wipe():
     try:
+        # remove all model folders
         shutil.rmtree(app.config["MODEL_OPTION"]["model_dir"])
         os.makedirs(app.config["MODEL_OPTION"]["model_dir"])
+        # remove tensorboard folder
+        shutil.rmtree(app.config["MODEL_OPTION"]["tb_dir"])
+        os.makedirs(app.config["MODEL_OPTION"]["tb_dir"])
 
         global curr_version, clf
-        curr_version = 0
+        curr_version = -1
         clf = models.RNNClassifier(app.config["MODEL_OPTION"])
         clf.start()
 
@@ -117,12 +134,17 @@ def wipe():
 
 
 if __name__ == '__main__':
-    curr_version = 0
+    
+    # init version
+    curr_version = -1
+    
+    # start model
     clf = models.RNNClassifier(app.config["MODEL_OPTION"])
     clf.start()
-
+    print('model start')
+    
     # TODO: create a partial training buffer
     # columns = ['Active', 'Planned', 'Retired']
     # training_buffer = pd.DataFrame(columns=columns)
 
-    app.run()
+    app.run(host='0.0.0.0', port=5000, debug=True)
