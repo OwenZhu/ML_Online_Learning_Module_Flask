@@ -8,7 +8,7 @@
 MODEL_OPTION = {
     "batch_size": 64,
     "model_dir": "model/",
-    "tfboard_dir": "graph/",
+    "tb_dir": "graph/",
     "embedding_matrix_dir": "/mnt/word_embedding_matrix.npy",
     "vocaburary_list_dir": "/mnt/vocabulary.pickle",
     "rnn_node_num": 64,

@@ -60,16 +60,21 @@ class BaseModel(object):
         pass
 
     def start(self, version=0, is_warm_start=False):
+        """
+        start ML model
+        """
         self.saver = tf.train.Saver()
         self.sess = tf.Session()
-        dir_path = self.opt["model_dir"] + str(type(self).__name__) + '_' + str(version) + '/'
+        model_save_path = self.opt["model_dir"] + str(type(self).__name__) + '_' + str(version) + '/' + \
+                          str(type(self).__name__)
 
         if is_warm_start:
-            self.saver.restore(self.sess, dir_path + str(type(self).__name__))
+            self.saver.restore(self.sess, model_save_path)
         else:
             self.sess.run(self.init_op)
 
-        self.writer = tf.summary.FileWriter(self.opt["tfboard_dir"] + str(type(self).__name__) + str(version) + '/')
+        tb_save_path = self.opt["tb_dir"] + str(type(self).__name__) + str(version) + '/'
+        self.writer = tf.summary.FileWriter(tb_save_path)
 
     def save_model(self, curr_version=0):
         """

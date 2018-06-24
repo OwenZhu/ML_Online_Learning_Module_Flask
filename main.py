@@ -51,16 +51,30 @@ def train():
         return jsonify({"status": True, "response": "Finished training"})
 
 
+@app.route('/partial_train', methods=['POST'])
+def partial_train():
+    if request.method == 'POST':
+        if clf is None:
+            return jsonify({'status': False, 'response': 'Train a model first'})
+
+        json_ = request.json
+        text_list = [t["problem_abstract"] for t in json_]
+        label_list = [t["Application_Status"] for t in json_]
+        clf.partial_fit(text_list, label_list)
+        return jsonify({"status": True, "response": "Finished partial training"})
+
+
 @app.route('/predict', methods=['POST'])
 def predict():
     if request.method == 'POST':
         if clf is None:
             return jsonify({'status': False, 'response': 'Train a model first'})
 
-        formed_data = {"problem_abstract": "This is a test"}
-        # json_ = request.json
-
-        text_list = [formed_data["problem_abstract"]]
+        # formed_data = {"problem_abstract": "This is a test"}
+        # text_list = [formed_data["problem_abstract"]]
+        
+        json_ = request.json
+        text_list = [t["problem_abstract"] for t in json_]
         prediction = clf.predict(text_list)
         return jsonify({"status": True, "pred_list": prediction})
 
