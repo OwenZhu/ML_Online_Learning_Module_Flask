@@ -127,7 +127,10 @@ def rollback():
     
 @app.route('/get_history', methods=['GET'])
 def get_history():
-    scores = pd.read_csv(history_scores_path)
+    if curr_version == -1:
+        return jsonify({'status': False, 'response': 'Train a model first'})
+    
+    scores = pd.read_csv(history_scores_path, header=None, usecols=[1])
     ht = scores.to_json()
     return jsonify({"status": True, "response": ht})
 
