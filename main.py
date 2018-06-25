@@ -35,8 +35,8 @@ def train():
     if request.method == 'GET':
         # load training set
         train_data = pd.read_csv(training_data_path, index_col='id', encoding="ISO-8859-1")
-        train_X = train_data['problem_abstract']
-        train_y = train_data[['Active', 'Planned', 'Retired']]
+        train_X = train_data['problem_abstract'][:1024]
+        train_y = train_data[['Active', 'Planned', 'Retired']][:1024]
         train_X, val_X, train_y, val_y = train_test_split(train_X, train_y, test_size=0.1, random_state=0)
 
         global clf
@@ -48,7 +48,7 @@ def train():
         clf.save_model(str(curr_version))
         
         # validate the classifier
-        clf.predict(val_X, val_y)
+        clf.predict(val_X)
         score = clf.score(val_X, val_y)
         print("Accuracy is:", score)
         
@@ -56,7 +56,7 @@ def train():
             f.write(str(curr_version) + ',' + str(score) + '\n')
         
         # TODO: what to do when client waits the training result?
-        return jsonify({"status": True, "response": "Finished training"})
+        return jsonify({"status": True, "response": "Finished training, accuracy is " + str(score)})
 
 
 @app.route('/partial_train', methods=['POST'])
@@ -67,8 +67,19 @@ def partial_train():
             return jsonify({'status': False, 'response': 'Train a model first'})
 
         json_ = request.get_json()
-        text_list = [t["problem_abstract"] for t in json_]
-        label_list = [t["Application_Status"] for t in json_]
+        
+        labels = ["Active", "Planned", "Retired"]
+        
+        text_list = []
+        label_list = []
+        for t in json_:
+            if "problem_abstract" in t and "Application_Status" in t:
+                text_list.append(t["problem_abstract"])
+                l = [0, 0, 0]
+                l[labels.index(t["Application_Status"])] = 1
+                label_list.append(l)
+        
+        global clf
         clf.partial_fit(text_list, label_list)
         curr_version += 1
         
@@ -111,7 +122,7 @@ def rollback():
             clf.start()
             return jsonify({"status": False, "response": "Previous version not found, rollback to initial version"})
 
-        return jsonify({"status": True, "response": "Rollback to version " + str(curr_version) + "successfully"})
+        return jsonify({"status": True, "response": "Rollback to version (" + str(curr_version) + ") successfully"})
 
     
 @app.route('/get_history', methods=['GET'])
